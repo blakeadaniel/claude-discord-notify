@@ -1,6 +1,6 @@
 {
   "name": "claude-discord-notify",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A Claude Code skill that lets Claude send messages to your Discord via webhook. Interactive npx installer — just paste your webhook URL.",
   "bin": {
     "claude-discord-notify": "bin/cli.js"

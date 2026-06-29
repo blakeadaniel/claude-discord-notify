@@ -50,9 +50,33 @@ Optional custom sender name:
 node ~/.claude/skills/discord-notify/discord_send.js --username "Build Bot" "Done!"
 ```
 
+Attach a file (image, log, screenshot, PDF, …) with `--file` — repeat it for up
+to 10 files, and pass either a local path or an http(s) URL:
+
+```bash
+node ~/.claude/skills/discord-notify/discord_send.js --file shot.png "here's the screenshot"
+node ~/.claude/skills/discord-notify/discord_send.js --file a.png --file build.log "results"
+```
+
+In conversation you don't supply paths yourself — just say _"send me that image
+on Discord"_ and Claude fills in the path to the file it's working with.
+
+Recognized file types (assigned the right MIME so Discord renders them inline):
+
+| Kind    | Extensions                                  |
+|---------|---------------------------------------------|
+| Image   | `png` `jpg`/`jpeg` `gif` `webp` `bmp` `svg` |
+| Video   | `mp4` `webm` `mov`                          |
+| Audio   | `mp3` `wav` `ogg`                           |
+| Docs    | `pdf` `txt` `log` `md` `csv` `html` `json`  |
+| Archive | `zip`                                       |
+
+Any other extension still uploads fine — it just arrives as a generic download.
+
 ## Notes
 
-- **No dependencies** — pure Node.js (≥18), uses the built-in `fetch`.
+- **No dependencies** — pure Node.js (≥18), uses the built-in `fetch` and `FormData`.
+- Attachments are uploaded as multipart `multipart/form-data`; URLs are fetched and verified to load before sending. A message is optional when you attach a file.
 - Messages over Discord's 2000-character limit are split automatically.
 - Discord markdown works: `**bold**`, `` `code` ``, code blocks, emoji.
 - Your webhook is a **secret**. Anyone who has it can post to that channel. It is stored only in your local `config.json` (which is `chmod 600` and git-ignored).
