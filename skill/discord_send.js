@@ -19,6 +19,9 @@
  * `--file` takes a local path or an http(s) URL and may be repeated, up to
  * Discord's limit of 10 attachments per message. With no message text,
  * attachments are sent on their own.
+ *
+ * Mentions (@everyone/@here/roles/users) in message content are suppressed
+ * by default — every outgoing payload sets `allowed_mentions: { parse: [] }`.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -28,6 +31,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CONFIG_PATH = path.join(__dirname, "config.json");
 const MAX = 2000; // Discord per-message content limit
 const MAX_FILES = 10; // Discord per-message attachment limit
+const MAX_RETRIES = 5; // retries for 429 / 5xx before giving up
+const BASE_DELAY_MS = 500; // backoff base when Discord gives no retry_after
+const MAX_DELAY_MS = 30_000; // cap on any single retry wait
 
 // Minimal extension → MIME map so Discord renders common files inline
 // (images especially) instead of treating everything as octet-stream.
@@ -81,10 +87,42 @@ function loadWebhook() {
   return cfg.webhookUrl;
 }
 
-async function post(webhookUrl, { content, username, files = [] } = {}) {
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Compute a retry delay (ms) for a failed response. Prefers Discord's own
+ * `retry_after` (seconds, in the JSON body or the `Retry-After` header) so
+ * we wait exactly as long as asked; falls back to exponential backoff for
+ * transient 5xx errors that carry neither.
+ */
+function retryDelayMs(res, bodyText, attempt) {
+  let retryAfterSec;
+  try {
+    const data = JSON.parse(bodyText);
+    if (typeof data.retry_after === "number") retryAfterSec = data.retry_after;
+  } catch {
+    /* not JSON */
+  }
+  if (retryAfterSec == null) {
+    const header = res.headers.get("retry-after");
+    if (header != null) retryAfterSec = Number(header);
+  }
+  const base =
+    retryAfterSec != null && Number.isFinite(retryAfterSec)
+      ? retryAfterSec * 1000
+      : BASE_DELAY_MS * 2 ** attempt;
+  return Math.min(Math.round(base) + Math.floor(Math.random() * 50), MAX_DELAY_MS);
+}
+
+async function post(webhookUrl, { content, username, files = [] } = {}, attempt = 0) {
   const payload = {};
   if (content) payload.content = content;
   if (username) payload.username = username;
+  // Suppress @everyone/@here/role/user pings by default; this is a
+  // default-safety guard, not configurable via CLI flag.
+  payload.allowed_mentions = { parse: [] };
 
   // A browser-like UA avoids Cloudflare bot blocks (1010) seen with
   // default library user-agents. With files we send multipart/form-data
@@ -104,10 +142,20 @@ async function post(webhookUrl, { content, username, files = [] } = {}) {
   }
 
   const res = await fetch(webhookUrl, { method: "POST", headers, body });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`HTTP ${res.status} ${res.statusText} ${text}`.trim());
+  if (res.ok) return;
+
+  const text = await res.text().catch(() => "");
+  // 429 = rate limited, 5xx = transient server-side failure — both worth
+  // retrying. Anything else (bad webhook, bad payload) is permanent.
+  const retryable = res.status === 429 || res.status >= 500;
+  if (retryable && attempt < MAX_RETRIES) {
+    await sleep(retryDelayMs(res, text, attempt));
+    return post(webhookUrl, { content, username, files }, attempt + 1);
   }
+  const suffix = retryable
+    ? ` (gave up after ${attempt} retr${attempt === 1 ? "y" : "ies"})`
+    : "";
+  throw new Error(`HTTP ${res.status} ${res.statusText} ${text}`.trim() + suffix);
 }
 
 /**
@@ -262,4 +310,10 @@ async function main() {
   }
 }
 
-main();
+// Only run as a CLI when invoked directly (`node discord_send.js ...`), not
+// when imported — e.g. by the test suite.
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main();
+}
+
+export { chunks, mimeFor, extFor, post, loadFile, loadWebhook, MAX_RETRIES };

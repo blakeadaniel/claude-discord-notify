@@ -70,6 +70,8 @@ show as a download depending on the client — the upload itself still succeeds.
 ## Notes
 
 - Messages over Discord's 2000-character limit are split automatically into multiple sends.
+- Rate limits (429) and transient server errors (5xx) are retried automatically with backoff before failing.
 - Discord markdown works: `**bold**`, `` `code` ``, ``` ```code blocks``` ```, multi-line, emoji.
+- Mentions (`@everyone`, `@here`, role and user mentions) in message content are suppressed by default — they won't ping anyone.
 - The webhook URL lives in `config.json` next to the sender (`chmod 600`). It is a **secret** — anyone with it can post to the channel. To change it, re-run `npx claude-discord-notify` or edit `config.json`.
 - On success it prints `✅ sent to Discord`; on failure it prints the HTTP error and exits non-zero.

@@ -1,5 +1,7 @@
 # claude-discord-notify
 
+[![CI](https://github.com/blakeadaniel/claude-discord-notify/actions/workflows/ci.yml/badge.svg)](https://github.com/blakeadaniel/claude-discord-notify/actions/workflows/ci.yml)
+
 A [Claude Code](https://claude.com/claude-code) skill that lets Claude send messages to your **Discord** via a webhook — build notifications, summaries, "I'm done" pings, whatever you ask for.
 
 Install is one interactive command. The only thing you provide is your Discord webhook URL.
@@ -76,9 +78,11 @@ Any other extension still uploads fine — it just arrives as a generic download
 ## Notes
 
 - **No dependencies** — pure Node.js (≥18), uses the built-in `fetch` and `FormData`.
+- Rate limits (HTTP 429) and transient server errors (5xx) are retried automatically with backoff, honoring Discord's `retry_after`, before giving up.
 - Attachments are uploaded as multipart `multipart/form-data`; URLs are fetched and verified to load before sending. A message is optional when you attach a file.
 - Messages over Discord's 2000-character limit are split automatically.
 - Discord markdown works: `**bold**`, `` `code` ``, code blocks, emoji.
+- Mentions (`@everyone`, `@here`, role and user mentions) in message content are suppressed by default — they won't ping anyone.
 - Your webhook is a **secret**. Anyone who has it can post to that channel. It is stored only in your local `config.json` (which is `chmod 600` and git-ignored).
 
 ## License
