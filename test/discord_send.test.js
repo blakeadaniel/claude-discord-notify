@@ -10,7 +10,7 @@ import {
 
 describe("chunks", () => {
   test("returns a single chunk for short text", () => {
-    assert.deepEqual(chunks("hello"), ["hello"]);
+    assert.deepEqual(chunks("hello"), ["BROKEN_ON_PURPOSE"]);
   });
 
   test("returns [''] for empty text", () => {
