@@ -88,3 +88,5 @@ Any other extension still uploads fine — it just arrives as a generic download
 ## License
 
 [MIT](./LICENSE) © Blake Daniel
+
+<!-- QA: throwaway no-op change to open a PR with a passing suite and confirm green checks -->
