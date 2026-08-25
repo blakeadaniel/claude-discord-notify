@@ -17,6 +17,8 @@
  *   node discord_send.js --embed-title "Build passed" --embed-color "#5865F2" \
  *     --embed-description "All 42 tests green" --embed-field "Duration=3m12s" \
  *     --embed-field-inline "Branch=main"
+ *   node discord_send.js --help
+ *   node discord_send.js -- "--- message text starting with dashes ---"
  *
  * The webhook URL is read from `config.json` sitting next to this file
  * (written by the installer, chmod 600). By default the top-level
@@ -77,6 +79,42 @@ const MAX_RETRIES = 5; // retries for 429 / 5xx before giving up
 const BASE_DELAY_MS = 500; // backoff base when Discord gives no retry_after
 const MAX_DELAY_MS = 30_000; // cap on any single retry wait
 const SUPPRESS_NOTIFICATIONS = 1 << 12; // Discord message flag 4096, suppresses the client-side push/desktop notification for this message
+
+const USAGE = `discord_send.js — send a message, attachments, or an embed to a Discord webhook.
+
+usage:
+  node discord_send.js [flags] [message...]
+  <command> | node discord_send.js [flags]
+
+flags:
+  --file, --attach <path|url>   attach a file; repeatable, up to ${MAX_FILES} per message
+  --to <name>                   send to a named webhook from config.json (default: the default webhook)
+  --username <name>             override the display name the message is posted under
+  --quiet, --silent             deliver without triggering a push notification
+  --dry-run                     validate and report what would be sent, without sending
+  --embed-title <text>          embed title
+  --embed-description <text>    embed description
+  --embed-color <color>         embed accent color: #RRGGBB, RRGGBB, or 0-16777215
+  --embed-field <name=value>    full-width embed field; repeatable
+  --embed-field-inline <n=v>    side-by-side embed field; repeatable
+  --help, -h                    show this help and exit
+  --                            stop parsing flags; everything after is message text
+
+message text:
+  Any non-flag arguments are joined with spaces to form the message. With no
+  message, no --file, and no embed, the message is read from stdin instead.
+
+examples:
+  node discord_send.js "build finished"
+  node discord_send.js --file shot.png "here's the screenshot"
+  node discord_send.js --to work --quiet "nightly backup finished"
+  npm test 2>&1 | node discord_send.js --username "Test Runner"
+  node discord_send.js -- "--- release notes ---"
+
+config:
+  Webhooks are read from config.json next to this script. Run
+  \`npx claude-discord-notify\` to create or update it.
+`;
 
 // Discord's documented limits for a single embed (see buildEmbed below —
 // exactly one embed per invocation is supported; no url/footer/image/
@@ -572,6 +610,22 @@ async function main() {
       const parsed = parseEmbedField(raw);
       if (!parsed) fail(`invalid --embed-field-inline: "${raw}" (expected name=value)`);
       embedFields.push({ ...parsed, inline: true });
+    } else if (a === "--help" || a === "-h") {
+      process.stdout.write(USAGE);
+      process.exit(0);
+    } else if (a === "--") {
+      // Everything after `--` is message text, so a message can start with
+      // dashes (e.g. a markdown rule) without looking like a flag.
+      rest.push(...args.slice(i + 1));
+      break;
+    } else if (a.startsWith("--")) {
+      // Without this, a typo like `--fiel shot.png` silently became message
+      // text and got delivered to Discord as-is.
+      fail(
+        `unknown flag: ${a}\n` +
+          `  run with --help to see the available flags\n` +
+          `  if that is message text, put it after --: discord_send.js -- "${a}"`
+      );
     } else {
       rest.push(a);
     }

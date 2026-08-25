@@ -2201,3 +2201,107 @@ describe("--embed-* CLI flags (child process)", () => {
     });
   });
 });
+
+describe("--help and unknown-flag rejection (child process)", () => {
+  // These run through the real CLI because they are entirely about main()'s
+  // argument parsing — the order of the --help / `--` / unknown-flag branches
+  // relative to the value-consuming flags is the whole point.
+  let hadExistingConfig = false;
+  let existingConfigContents = "";
+
+  function writeConfig(cfg) {
+    hadExistingConfig = fs.existsSync(CONFIG_PATH);
+    if (hadExistingConfig) existingConfigContents = fs.readFileSync(CONFIG_PATH, "utf8");
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg));
+  }
+
+  function restoreConfig() {
+    if (hadExistingConfig) fs.writeFileSync(CONFIG_PATH, existingConfigContents);
+    else fs.rmSync(CONFIG_PATH, { force: true });
+  }
+
+  function run(args) {
+    return new Promise((resolve) => {
+      const child = execFile(process.execPath, [SEND_JS, ...args], (error, stdout, stderr) => {
+        resolve({ code: error ? error.code : 0, stdout, stderr });
+      });
+      // Same reason as the other child-process suites: without EOF, any
+      // argument combination that falls back to stdin blocks forever.
+      child.stdin.end();
+    });
+  }
+
+  test("--help prints usage and exits 0 without needing a config", async () => {
+    const { code, stdout } = await run(["--help"]);
+    assert.equal(code, 0);
+    assert.match(stdout, /usage:/);
+    assert.match(stdout, /--embed-field-inline/);
+  });
+
+  test("-h is accepted as well", async () => {
+    const { code, stdout } = await run(["-h"]);
+    assert.equal(code, 0);
+    assert.match(stdout, /usage:/);
+  });
+
+  test("--help lists the real MAX_FILES value, not a hardcoded one", async () => {
+    const { stdout } = await run(["--help"]);
+    assert.match(stdout, /up to 10 per message/);
+  });
+
+  test("an unknown --flag fails instead of being sent as message text", async (t) => {
+    writeConfig({ webhookUrl: "https://discord.com/api/webhooks/1/token1234567890" });
+    t.after(restoreConfig);
+    const { code, stdout, stderr } = await run(["--fiel", "shot.png", "oops"]);
+    assert.equal(code, 1);
+    assert.match(stderr, /unknown flag: --fiel/);
+    assert.match(stderr, /--help/);
+    assert.equal(stdout, "");
+  });
+
+  test("the unknown-flag error points at `--` for genuine message text", async (t) => {
+    writeConfig({ webhookUrl: "https://discord.com/api/webhooks/1/token1234567890" });
+    t.after(restoreConfig);
+    const { stderr } = await run(["--oops"]);
+    assert.match(stderr, /put it after --/);
+    assert.match(stderr, /discord_send\.js -- "--oops"/);
+  });
+
+  test("`--` ends flag parsing so a message can start with dashes", async (t) => {
+    writeConfig({ webhookUrl: "https://discord.com/api/webhooks/1/token1234567890" });
+    t.after(restoreConfig);
+    const { code, stdout, stderr } = await run(["--dry-run", "--", "--- release notes ---"]);
+    assert.equal(code, 0, stderr);
+    assert.match(stdout, /message 1\/1 — 21 chars:/);
+    assert.match(stdout, /--- release notes ---/);
+  });
+
+  test("`--` does not swallow flags that came before it", async (t) => {
+    writeConfig({
+      webhookUrl: "https://discord.com/api/webhooks/1/token1234567890",
+      webhooks: { work: "https://discord.com/api/webhooks/2/token0987654321" },
+    });
+    t.after(restoreConfig);
+    const { code, stdout, stderr } = await run(["--dry-run", "--to", "work", "--", "--x"]);
+    assert.equal(code, 0, stderr);
+    assert.match(stdout, /target: work/);
+    assert.match(stdout, /--x/);
+  });
+
+  test("a flag value that looks like a flag is still treated as a value", async (t) => {
+    writeConfig({ webhookUrl: "https://discord.com/api/webhooks/1/token1234567890" });
+    t.after(restoreConfig);
+    const { code, stdout, stderr } = await run(["--dry-run", "--embed-title", "--help"]);
+    assert.equal(code, 0, stderr);
+    assert.match(stdout, /title: --help/);
+    assert.doesNotMatch(stdout, /usage:/);
+  });
+
+  test("a single-dash argument is still message text (markdown bullets, negative numbers)", async (t) => {
+    writeConfig({ webhookUrl: "https://discord.com/api/webhooks/1/token1234567890" });
+    t.after(restoreConfig);
+    const { code, stdout, stderr } = await run(["--dry-run", "-3 degrees overnight"]);
+    assert.equal(code, 0, stderr);
+    assert.match(stdout, /-3 degrees overnight/);
+  });
+});

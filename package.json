@@ -1,6 +1,6 @@
 {
   "name": "claude-discord-notify",
-  "version": "1.2.1",
+  "version": "1.3.0",
   "description": "Discord notifications for Claude Code. A zero-dependency skill and CLI that sends messages, file attachments, and rich embeds to a Discord webhook.",
   "bin": {
     "claude-discord-notify": "bin/cli.js"
@@ -11,7 +11,8 @@
   },
   "files": [
     "bin/",
-    "skill/"
+    "skill/",
+    "!skill/config.json"
   ],
   "scripts": {
     "test": "node --test"

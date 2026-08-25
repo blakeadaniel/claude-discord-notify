@@ -2,6 +2,8 @@
 
 > Send **Discord notifications** from **[Claude Code](https://claude.com/claude-code)** — build results, summaries, screenshots, and "I'm done" pings, posted to a Discord webhook you own.
 
+![Claude Code posting to Discord: test results to the default channel, a screenshot to #work, a silent deploy summary to #alerts, then piped output and a rich embed sent straight from the shell](https://raw.githubusercontent.com/blakeadaniel/claude-discord-notify/main/docs/demo.gif)
+
 [![CI](https://github.com/blakeadaniel/claude-discord-notify/actions/workflows/ci.yml/badge.svg)](https://github.com/blakeadaniel/claude-discord-notify/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![npm version](https://img.shields.io/npm/v/claude-discord-notify.svg)](https://www.npmjs.com/package/claude-discord-notify)
@@ -26,7 +28,7 @@ It is deliberately small — no dependencies, no daemon, no account. A single ~6
 - **Safe by default** — `@everyone`/`@here`/role/user mentions in message text never ping anyone, and `--quiet` suppresses the push notification for low-priority updates.
 - **`--dry-run` previews** — runs every validation a real send performs and prints exactly what would be posted, without posting it.
 - **Resilient sending** — HTTP 429 and 5xx are retried with backoff that honors Discord's own `retry_after`; messages over 2000 characters are split on line boundaries automatically.
-- **Tested** — 165 tests across 35 suites, run on Node 18, 20, and 22 in CI.
+- **Tested** — 174 tests across 36 suites, run on Node 18, 20, and 22 in CI.
 
 ## 📋 Table of Contents
 
@@ -42,6 +44,12 @@ It is deliberately small — no dependencies, no daemon, no account. A single ~6
   - [Previewing (`--dry-run`)](#previewing---dry-run)
 - [Configuration](#️-configuration)
 - [Examples](#-examples)
+  - [Notify when a test run finishes](#notify-when-a-test-run-finishes)
+  - [Wrap any long-running command](#wrap-any-long-running-command)
+  - [Alert on a failed deploy](#alert-on-a-failed-deploy)
+  - [Ship a release notification](#ship-a-release-notification)
+  - [Run a nightly job and report quietly](#run-a-nightly-job-and-report-quietly)
+  - [Auto-notify when Claude Code finishes a turn](#auto-notify-when-claude-code-finishes-a-turn)
 - [Limits](#-limits)
 - [How It Works](#-how-it-works)
 - [Development](#️-development)
@@ -153,8 +161,30 @@ some-command | node ~/.claude/skills/discord-notify/discord_send.js
 | `--embed-color <value>` | `#RRGGBB`, `RRGGBB`, or `0`–`16777215` | Embed accent color bar |
 | `--embed-field <name=value>` | repeatable | Full-width ("block") embed field |
 | `--embed-field-inline <name=value>` | repeatable | Inline embed field (sits side-by-side) |
+| `--help` | *(boolean)* | Print usage and exit `0`. Alias: `-h` |
+| `--` | *(separator)* | Stop parsing flags; every argument after it is message text |
 
-Flags may appear in any order and compose freely with each other. There is no `--help` flag; this table is the reference.
+Flags may appear in any order and compose freely with each other. Run `--help` for
+the same reference at the terminal.
+
+An unrecognized `--flag` is rejected rather than treated as message text, so a typo
+fails locally instead of being delivered to your channel:
+
+```console
+$ node ~/.claude/skills/discord-notify/discord_send.js --fiel shot.png "oops"
+error: unknown flag: --fiel
+  run with --help to see the available flags
+  if that is message text, put it after --: discord_send.js -- "--fiel"
+```
+
+To send message text that genuinely begins with dashes, put it after `--`:
+
+```bash
+node ~/.claude/skills/discord-notify/discord_send.js -- "--- release notes ---"
+```
+
+A single-dash argument (`-3 degrees overnight`, a markdown bullet) is still ordinary
+message text — only `--`-prefixed arguments are checked against the flag list.
 
 **Exit codes:** `0` success · `1` any validation or send failure (message on stderr, prefixed `error:`) · `2` nothing to send (no text, no attachment, no embed).
 
@@ -279,35 +309,142 @@ There are **no environment variables** — the webhook is read from `config.json
 
 ## 💡 Examples
 
-### A build notification with structured results
+These are complete workflows rather than flag demos. They all assume this helper,
+which just saves repeating the path:
 
 ```bash
-node ~/.claude/skills/discord-notify/discord_send.js \
-  --embed-title "CI passed" \
+notify() { node ~/.claude/skills/discord-notify/discord_send.js "$@"; }
+```
+
+Put it in your `~/.bashrc` or `~/.zshrc`. Every example works without it — substitute
+the full path.
+
+### Notify when a test run finishes
+
+The workflow from the demo at the top of this README: report the counts on success,
+attach the whole log on failure.
+
+```bash
+if npm test > /tmp/test.log 2>&1; then
+  notify "tests passed — $(awk '$2=="pass"{print $3}' /tmp/test.log)/$(awk '$2=="tests"{print $3}' /tmp/test.log) green"
+else
+  notify --file /tmp/test.log \
+    "tests FAILED — $(awk '$2=="fail"{print $3}' /tmp/test.log) failing, log attached"
+fi
+```
+
+The `awk` lookups read `node --test`'s summary lines (`ℹ tests 174`, `ℹ pass 174`,
+`ℹ fail 0`); adjust the field names for another runner. Attaching the log on the
+failure branch is the point — it makes a red build diagnosable from your phone
+without opening a laptop.
+
+### Wrap any long-running command
+
+A general "tell me when this is done" wrapper. It preserves the wrapped command's
+exit code, so it composes with `&&` and CI scripts.
+
+```bash
+notify-done() {
+  local start=$SECONDS
+  "$@"
+  local code=$?
+  local elapsed=$(( SECONDS - start ))
+  local took="$(( elapsed / 60 ))m$(( elapsed % 60 ))s"
+  if [ $code -eq 0 ]; then
+    notify "\`$*\` finished in $took"
+  else
+    notify "\`$*\` exited $code after $took"
+  fi
+  return $code
+}
+```
+
+Then prefix anything slow:
+
+```bash
+notify-done npm run build
+notify-done make -j8 release
+notify-done pytest tests/integration
+```
+
+**Output:**
+
+```
+`npm run build` finished in 4m12s
+```
+
+### Alert on a failed deploy
+
+With no message, no attachment, and no embed, the sender reads the message body from
+stdin — so any command's output pipes straight in.
+
+```bash
+make deploy 2>&1 | tail -20 | notify --username "Deploy"
+```
+
+Output longer than 2000 characters is split across multiple messages on line
+boundaries, so a long stack trace arrives intact rather than truncated.
+
+### Ship a release notification
+
+An embed reads better than plain text for structured results, and the fields can be
+filled from the repo itself:
+
+```bash
+notify \
+  --embed-title "Deployed to production" \
   --embed-color "#57F287" \
-  --embed-field-inline "Branch=main" \
-  --embed-field-inline "Duration=3m12s" \
-  --embed-field "Commit=3a8acf2 Add attachment size check"
+  --embed-field-inline "Version=$(node -p "require('./package.json').version")" \
+  --embed-field-inline "Commit=$(git rev-parse --short HEAD)" \
+  --embed-field "Message=$(git log -1 --pretty=%s)"
 ```
 
-Green accent bar, two side-by-side fields, one full-width field, and no message text — an embed-only send.
+Green accent bar, two side-by-side fields, one full-width field, and no message text —
+an embed-only send.
 
-### Piping command output straight to Discord
+### Run a nightly job and report quietly
 
-```bash
-npm test 2>&1 | node ~/.claude/skills/discord-notify/discord_send.js --username "Test Runner"
+`--quiet` delivers the message without triggering a push notification, which is what
+you want for a job that succeeds every night. Cron has no shell functions, so this one
+spells out the path:
+
+```cron
+0 3 * * * cd "$HOME/site" && ./backup.sh > /tmp/backup.log 2>&1; \
+  node "$HOME/.claude/skills/discord-notify/discord_send.js" \
+    --to work --quiet --file /tmp/backup.log "nightly backup finished"
 ```
 
-Output over 2000 characters is split across multiple messages on line boundaries.
+`--to work` targets a named webhook from `config.json`, keeping routine noise out of
+your default channel.
 
-### A screenshot plus a log, quietly, to the work channel
+### Auto-notify when Claude Code finishes a turn
 
-```bash
-node ~/.claude/skills/discord-notify/discord_send.js \
-  --to work --quiet \
-  --file ./shot.png --file ./build.log \
-  "nightly run finished — nothing needs attention"
+A `Stop` hook fires when Claude finishes responding, and receives the turn's final
+message on stdin as `last_assistant_message`. Forwarding it to Discord means you get
+Claude's own summary pushed to your phone without asking for it:
+
+```json
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -f ~/.notify-claude ] || exit 0; node -e 'let s=\"\";process.stdin.on(\"data\",d=>s+=d).on(\"end\",()=>process.stdout.write(JSON.parse(s).last_assistant_message||\"done\"))' | node ~/.claude/skills/discord-notify/discord_send.js --username \"Claude Code\""
+          }
+        ]
+      }
+    ]
+  }
+}
 ```
+
+`Stop` fires on *every* turn, which is noise while you are sitting at the keyboard, so
+the command begins with a gate: it exits silently unless `~/.notify-claude` exists.
+Run `touch ~/.notify-claude` when you step away and `rm ~/.notify-claude` when you get
+back. Put the block in `~/.claude/settings.json` for every project, or in a project's
+`.claude/settings.local.json` for just that one.
 
 ### Checking a send before committing to it
 
@@ -417,7 +554,7 @@ node --test test/cli.test.js            # one file
 node --test --test-name-pattern "embed" # filter by name
 ```
 
-Current suite: **165 tests across 35 suites**, all passing. CI runs them on Node **18.x, 20.x, and 22.x** for every push and pull request against `main`.
+Current suite: **174 tests across 36 suites**, all passing. CI runs them on Node **18.x, 20.x, and 22.x** for every push and pull request against `main`.
 
 Coverage spans unit tests of the pure helpers (chunking, MIME mapping, color/field parsing, embed validation, byte formatting, URL masking, config building) and end-to-end tests that spawn `discord_send.js` as a child process against a local stub server — covering multipart uploads, retry/backoff on 429 and 5xx, `--to` resolution failures, `--quiet` flags, exit codes, and full `--dry-run` output.
 

@@ -155,7 +155,7 @@ sequenceDiagram
 
     Claude->>Send: node discord_send.js --file a.png --embed-title "Build passed" "done"
 
-    Send->>Send: parse flags — any order, rest is message text
+    Send->>Send: parse flags — any order; unknown --flags fail, rest is message text
     Send->>Send: fileRefs.length > 10 → fail(1)
     Send->>Send: buildEmbed() — pure, zero I/O, validates Discord embed limits
     opt no text, no files, no embed
@@ -204,6 +204,9 @@ flowchart TD
     ARGS["process.argv.slice(2)"] --> PARSE{"parse flags"}
     PARSE -->|"--username / --to<br/>--file / --attach<br/>--quiet / --silent / --dry-run<br/>--embed-*"| COUNT
     PARSE -->|"missing flag value"| FAIL1["fail() → exit 1"]
+    PARSE -->|"--help / -h"| HELP["print USAGE → exit 0"]
+    PARSE -->|"unknown --flag"| FAIL1
+    PARSE -->|"-- (separator)"| TEXT
     PARSE -->|"anything else"| TEXT["rest[] → message text"]
     TEXT --> COUNT
 
@@ -233,6 +236,7 @@ flowchart TD
     style FAIL1 fill:#ffcdd2,stroke:#b91c1c,color:#1f2937
     style FAIL2 fill:#ffcdd2,stroke:#b91c1c,color:#1f2937
     style REPORT fill:#c8e6c9,stroke:#15803d,color:#1f2937
+    style HELP fill:#c8e6c9,stroke:#15803d,color:#1f2937
     style POST fill:#5865F2,stroke:#3c45a5,color:#ffffff
 ```
 
@@ -392,7 +396,7 @@ graph LR
 
 ## Test Topology
 
-165 test cases across 35 suites (28 of them top-level `describe` blocks) —
+174 test cases across 36 suites (29 of them top-level `describe` blocks) —
 roughly 2,550 lines of test against
 930 lines of source. The suite splits into two strategies, and the split is
 forced by `fail()`: it calls `process.exit(1)`, so every error path has to be

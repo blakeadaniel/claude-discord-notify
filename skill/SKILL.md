@@ -27,6 +27,13 @@ Optional custom sender name shown in Discord:
 node ~/.claude/skills/discord-notify/discord_send.js --username "Build Bot" "Done!"
 ```
 
+If the message text itself begins with `--` (a markdown rule, a diff hunk), put
+it after a bare `--` so it isn't parsed as a flag:
+
+```bash
+node ~/.claude/skills/discord-notify/discord_send.js -- "--- deploy notes ---"
+```
+
 ## Sending to a specific webhook
 
 `config.json` always has a default `webhookUrl`. It may also have a
@@ -213,6 +220,7 @@ show as a download depending on the client — the upload itself still succeeds.
 ## Notes
 
 - Messages over Discord's 2000-character limit are split automatically into multiple sends.
+- An unrecognized `--flag` is rejected with `error: unknown flag: ...` and exit 1 — it is **not** silently sent as message text. Check the spelling against this file, or run the sender with `--help` for the full flag list. Message text that genuinely starts with dashes goes after `--`.
 - Rate limits (429) and transient server errors (5xx) are retried automatically with backoff before failing.
 - Discord markdown works: `**bold**`, `` `code` ``, ``` ```code blocks``` ```, multi-line, emoji.
 - Mentions (`@everyone`, `@here`, role and user mentions) in message content are suppressed by default — they won't ping anyone.
@@ -220,4 +228,4 @@ show as a download depending on the client — the upload itself still succeeds.
 - `--dry-run` runs all the same validation (including real URL fetches for `--file` URLs) and prints a full preview of what would be sent, but skips the actual Discord post — see "Previewing before sending" above.
 - A single rich embed (title/description/color/fields) can be attached via `--embed-title`/`--embed-description`/`--embed-color`/`--embed-field`/`--embed-field-inline` — see "Sending a rich embed" above. Only one embed per message is supported; embed URL/footer/image/thumbnail/author/timestamp and multiple embeds are intentionally out of scope. Discord's per-embed length/count limits are validated locally before any network call.
 - The webhook URL (and any named webhooks) live in `config.json` next to the sender (`chmod 600`): `{ "webhookUrl": "...", "webhooks": { "name": "..." } }` — `webhooks` is optional and only present if the user configured named webhooks. Webhook URLs are **secrets** — anyone with one can post to that channel. To change them, re-run `npx claude-discord-notify` or edit `config.json`.
-- On success it prints `✅ sent to Discord`; on failure it prints the HTTP error and exits non-zero.
+- On success it prints `✅ sent <what> to Discord`, where `<what>` names what went out (`message`, `embed`, `N attachments`, or those joined with ` + `); on failure it prints the HTTP error and exits non-zero.
