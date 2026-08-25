@@ -71,7 +71,70 @@ function mask(url) {
   );
 }
 
-function install(webhookUrl) {
+const NAME_RE = /^[A-Za-z0-9_-]+$/;
+
+/** Build the config object install() writes, given the primary webhook and
+ * a (possibly empty) named-webhooks map. Pulled out so it can be unit
+ * tested without touching the filesystem. */
+function buildConfig(webhookUrl, webhooks = {}) {
+  return { webhookUrl, ...(Object.keys(webhooks).length ? { webhooks } : {}) };
+}
+
+/**
+ * Optionally prompt for one or more named webhooks (for `--to <name>`).
+ * Declining (default) is a no-op and returns `existingWebhooks` unchanged.
+ * Accepting loops: name -> URL, then asks whether to add another.
+ * Returns the resulting webhooks object (possibly `{}`).
+ */
+async function promptNamedWebhooks(rl, existingWebhooks = {}) {
+  const webhooks = { ...existingWebhooks };
+
+  if (Object.keys(webhooks).length) {
+    log("");
+    log("Named webhooks already configured:");
+    for (const [name, url] of Object.entries(webhooks)) {
+      log(`  ${name}: ${mask(url)}`);
+    }
+  }
+
+  log("");
+  const add = (
+    await ask(rl, "Add or update a named webhook for --to? [y/N] ")
+  ).toLowerCase();
+  if (add !== "y" && add !== "yes") return webhooks;
+
+  while (true) {
+    let name;
+    while (true) {
+      name = await ask(rl, "Webhook name (letters, digits, _ or -): ");
+      if (NAME_RE.test(name)) break;
+      log("");
+      log("⚠️  Invalid name — use only letters, digits, underscores, and hyphens.");
+      log("");
+    }
+
+    let url;
+    while (true) {
+      url = await ask(rl, `Discord webhook URL for "${name}": `);
+      if (WEBHOOK_RE.test(url)) break;
+      log("");
+      log("⚠️  That doesn't look like a Discord webhook URL. It should start with");
+      log("   https://discord.com/api/webhooks/  — please try again.");
+      log("");
+    }
+
+    webhooks[name] = url;
+
+    const another = (
+      await ask(rl, "Add another named webhook? [y/N] ")
+    ).toLowerCase();
+    if (another !== "y" && another !== "yes") break;
+  }
+
+  return webhooks;
+}
+
+function install(webhookUrl, webhooks = {}) {
   fs.mkdirSync(SKILL_DIR, { recursive: true });
 
   for (const file of ["SKILL.md", "discord_send.js"]) {
@@ -80,7 +143,7 @@ function install(webhookUrl) {
 
   fs.writeFileSync(
     CONFIG_PATH,
-    JSON.stringify({ webhookUrl }, null, 2) + "\n",
+    JSON.stringify(buildConfig(webhookUrl, webhooks), null, 2) + "\n",
     { mode: 0o600 }
   );
   fs.chmodSync(CONFIG_PATH, 0o600); // ensure mode even if file pre-existed
@@ -108,12 +171,31 @@ async function main() {
   const rl = readline.createInterface({ input: stdin, output: stdout });
   try {
     const webhookUrl = await promptWebhook(rl);
-    install(webhookUrl);
+
+    let existingWebhooks = {};
+    try {
+      const parsed = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
+      if (
+        parsed.webhooks &&
+        typeof parsed.webhooks === "object" &&
+        !Array.isArray(parsed.webhooks)
+      ) {
+        existingWebhooks = parsed.webhooks;
+      }
+    } catch {
+      /* no existing config, or it's unreadable/invalid — start fresh */
+    }
+
+    const webhooks = await promptNamedWebhooks(rl, existingWebhooks);
+    install(webhookUrl, webhooks);
 
     log("");
     log(`✅ Installed skill to ${SKILL_DIR}`);
     log(`   • SKILL.md, discord_send.js`);
-    log(`   • config.json (webhook saved, chmod 600)`);
+    const namedCount = Object.keys(webhooks).length;
+    log(
+      `   • config.json (webhook saved${namedCount ? ` + ${namedCount} named webhook${namedCount > 1 ? "s" : ""}` : ""}, chmod 600)`
+    );
 
     const test = (await ask(rl, "\nSend a test message to Discord now? [Y/n] "))
       .toLowerCase();
@@ -137,11 +219,25 @@ async function main() {
   }
 }
 
-main().catch((e) => {
-  stderr_write(`error: ${e.message || e}`);
-  process.exit(1);
-});
-
 function stderr_write(msg) {
   process.stderr.write(msg + "\n");
 }
+
+// Only run as a CLI when invoked directly (`node cli.js` / `npx
+// claude-discord-notify`), not when imported — e.g. by the test suite.
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch((e) => {
+    stderr_write(`error: ${e.message || e}`);
+    process.exit(1);
+  });
+}
+
+export {
+  promptWebhook,
+  promptNamedWebhooks,
+  buildConfig,
+  install,
+  mask,
+  WEBHOOK_RE,
+  NAME_RE,
+};
