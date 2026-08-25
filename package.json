@@ -1,7 +1,7 @@
 {
   "name": "claude-discord-notify",
-  "version": "1.2.0",
-  "description": "A Claude Code skill that lets Claude send messages to your Discord via webhook. Interactive npx installer — just paste your webhook URL.",
+  "version": "1.2.1",
+  "description": "Discord notifications for Claude Code. A zero-dependency skill and CLI that sends messages, file attachments, and rich embeds to a Discord webhook.",
   "bin": {
     "claude-discord-notify": "bin/cli.js"
   },
@@ -19,11 +19,26 @@
   "keywords": [
     "claude",
     "claude-code",
+    "claude-code-skill",
+    "anthropic",
+    "agent-skill",
     "skill",
     "discord",
+    "discord-webhook",
+    "discord-notification",
+    "discord-bot",
     "webhook",
     "notify",
-    "notification"
+    "notification",
+    "notifications",
+    "alerts",
+    "push-notification",
+    "cli",
+    "terminal",
+    "nodejs",
+    "zero-dependency",
+    "devtools",
+    "build-notifications"
   ],
   "author": "Blake Daniel",
   "license": "MIT",

@@ -1,12 +1,15 @@
 # claude-discord-notify
 
-> A [Claude Code](https://claude.com/claude-code) skill that lets Claude message you on **Discord** — build notifications, summaries, screenshots, "I'm done" pings, whatever you ask for.
+> Send **Discord notifications** from **[Claude Code](https://claude.com/claude-code)** — build results, summaries, screenshots, and "I'm done" pings, posted to a Discord webhook you own.
 
 [![CI](https://github.com/blakeadaniel/claude-discord-notify/actions/workflows/ci.yml/badge.svg)](https://github.com/blakeadaniel/claude-discord-notify/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.2.0-green.svg)](package.json)
+[![npm version](https://img.shields.io/npm/v/claude-discord-notify.svg)](https://www.npmjs.com/package/claude-discord-notify)
+[![npm downloads](https://img.shields.io/npm/dm/claude-discord-notify.svg)](https://www.npmjs.com/package/claude-discord-notify)
 [![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)](https://nodejs.org)
 [![Dependencies](https://img.shields.io/badge/dependencies-0-brightgreen.svg)](package.json)
+
+**claude-discord-notify** is a [Claude Code](https://claude.com/claude-code) skill and zero-dependency Node.js command-line tool that sends Discord notifications from your terminal via a Discord webhook — plain messages, file attachments, and rich embeds.
 
 Long-running work in Claude Code means watching a terminal. This skill removes the watching: you tell Claude *"notify me on Discord when the tests pass"* and the message arrives in your channel. Install is one interactive command, and the only thing you provide is a Discord webhook URL.
 
@@ -48,6 +51,7 @@ It is deliberately small — no dependencies, no daemon, no account. A single ~6
 - [Contributing](#-contributing)
 - [License](#-license)
 - [Support](#-support)
+- [Related Tools](#-related-tools)
 
 ## 🚀 Installation
 
@@ -484,6 +488,11 @@ CI (Node 18/20/22) must pass before a PR can merge.
 - **Skill behavior reference** — [`skill/SKILL.md`](skill/SKILL.md) documents exactly what Claude is told about when and how to use each flag
 - **Discord webhook docs** — [Discord Developer Portal: Webhook Resource](https://discord.com/developers/docs/resources/webhook)
 - **Claude Code docs** — [claude.com/claude-code](https://claude.com/claude-code)
+- **Package page** — [claude-discord-notify on npm](https://www.npmjs.com/package/claude-discord-notify)
+
+## 🔗 Related Tools
+
+- [claude-code-statusline-progress](https://github.com/blakeadaniel/claude-code-statusline-progress) — a shell status line for Claude Code, with a Claude-powered setup prompt.
 
 ---
 
